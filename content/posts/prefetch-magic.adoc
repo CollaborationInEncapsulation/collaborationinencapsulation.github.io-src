@@ -1,0 +1,355 @@
+---
+title: "Prefetch Magic"
+date: 2018-10-22T23:05:08+03:00
+draft: false
+---
+
+= Prefetch Magic (or where is my Backpressure?)
+:toc:
+
+In this blog post we are going to learn something that could help you that save your production from fire, or that could improve your performance, or simply we are discover some hidden gems that you have never know about.
+
+== Beginning
+
+Our journey is going to start from the far away... from the Reactive Streams specification. One of the vital features of Reactive Streams specification is a built-in flow control called backpressure control. In Reactive Streams, backpressure control is expressed as an ability of the `Subscriber` to (a)synchronously^1^ _pull_ a specific number of elements from the source using `Subscription#request(long n)` method. The following code-sample shows how we can use subscription in order to control data-flow:
+
+[source,java]
+----
+Flux.range(0, 1000)                          <1>
+    .log()                                   <2>
+    .subscribe(                              <3>
+        new BaseSubscriber() {               <4>
+            hookOnSubscribe(Subscription s) {
+                s.request(1);                <5>
+            }
+        }
+    )
+----
+<1> Crete a FluxRange publisher with the 1000 in it;
+<2> Log all signals within the stream;
+<3> Subscribe to the Flux.
+<4> Extend the `reactor.core.BaseSubscriber` abstract class.
+<5> Request one element on the given Subscription
+
+For our experiment in backpressure testing we are using Project Reactor 3, which is an implementation Reactive Streams spec. However, the same can be achieved with RxJava 2 `Flowable`. In this blog post we focus on Project Reactor 3, but bear in mind that the same is applicable for RxJava 2 too. In the sample above, we create a stream from 0 to 999 and requested a very first element at the `BaseSubscriber#hookOnSubscribe` method. This action produces a single `Subscriber#onNext(0)` and then hang forever since there is no other logic that requests another one element from _upstream_. The following, is a console output that we can observe after running the above-mentioned sample:
+
+[source,console]
+----
+[ INFO] (main) | onSubscribe([Synchronous Fuseable] FluxRange.RangeSubscription)
+[ INFO] (main) | request(1)
+[ INFO] (main) | onNext(0)
+----
+
+One thing that we may takeaway from the sample above is that we can control backpressure, and tools such as Project Reactor helps us with that.
+
+Even though the above sample is representative enough, the usual code looks different. For example, the following is a piece of code taken from the real project and adapted for demo purpose. It shows part of the matched order post processing flow:
+
+[source,java]
+----
+ordersFlux
+    .log()
+    .filter(order -> order instanceof MatchedOrder)
+    .filter(order -> ((MatchedOrder) order).isTaker())
+    .map(matchedOrder -> {
+        MatchedOrder matched = ((MatchedOrder) matchedOrder);
+        return new TradeVM(
+            matched.getMatchedPrice(),
+            matched.getQuantity(),
+            Instant.now().toEpochMilli()
+        );
+    });
+----
+
+since this is part of real application, to test it, we provide a cold source of data and subscribe to it using the `Subscriber` implementation from the previous sample:
+
+[source,java]
+----
+Flux.just(generateOrders())
+    .log()
+    .filter(order -> order instanceof MatchedOrder)
+    .filter(order -> ((MatchedOrder) order).isTaker())
+    .map(matchedOrder -> {
+        MatchedOrder matched = ((MatchedOrder) matchedOrder);
+        return new TradeVM(
+            matched.getMatchedPrice(),
+            matched.getQuantity(),
+            Instant.now().toEpochMilli()
+        );
+    })
+    .subscribe(
+        new BaseSubscriber() {
+            hookOnSubscribe(Subscription s) {
+                s.request(1);
+            }
+        }
+    )
+----
+
+By running that sample, we observer the following output:
+
+[source,console]
+----
+[ INFO] (main) | onSubscribe([Synchronous Fuseable] FluxArray.ArrayConditionalSubscription)
+[ INFO] (main) | request(1)
+[ INFO] (main) | onNext(MatchedOrder(id=0, matchedId=2, userId=test, price=10, matchedPrice=10, quantity=1, type=LIMIT, taker=true, partially=true, timestamp=1545388397427))
+----
+
+And again, we can see that in that, more complex flow, backpressure control works as expected. However, in reality, we can observer the code like following:
+
+[source,java]
+----
+// orderBook
+//    .listen()
+Flux.fromStream(generateOrders())
+    .log()
+    .map(orderMapper::toOrderBase)
+    .publishOn(Schedulers.newSingle("orders-post-processing"))
+    .filter(event -> {
+        Class<?> [] supportedClasses = {
+            MatchedOrder.class,
+            CancelledOrder.class
+        };
+
+        for (Class<?> aClass : supportedClasses) {
+            if (aClass.isInstance(event)) {
+                return true;
+            }
+        }
+
+        return false;
+    })
+    .groupBy(OrderBase::getId)
+    .flatMap(ordersByIdFlux -> ordersByIdFlux
+        .takeUntil(orderEvent ->
+            (orderEvent instanceof MatchedOrder && !((MatchedOrder) orderEvent).isPartially()) ||
+            orderEvent instanceof CancelledOrder
+        )
+        .concatMap(event -> ...)
+    )  
+    .subscribe(
+        new BaseSubscriber<Order>() {
+            public void hookOnSubscribe(Subscription s) {
+                s.request(1);
+            }
+        }
+    );
+----
+
+To save our time, we commented the original code and replaced source with stream of generated `Order`s and put the `BaseSubscriber` instance that requests only one element.
+
+By running the above mentioned sample, we, surprisingly observe the following:
+
+[source,console]
+----
+[ INFO] (main) | onSubscribe([Synchronous Fuseable] FluxIterable.IterableSubscription)
+[ INFO] (main) | request(256)
+[ INFO] (main) | onNext(MatchedOrder(id=0, matchedId=2, userId=test, price=10, matchedPrice=10, quantity=1, type=LIMIT, taker=true, partially=true, timestamp=1545471249189))
+...
+[ INFO] (orders-post-processing-1) | onNext(MatchedOrder(id=1023, matchedId=2, userId=test, price=10, matchedPrice=10, quantity=1, type=LIMIT, taker=true, partially=true, timestamp=1545471249324))
+----
+
+As we can see, for some reasons the source produced 1024 instead of the requested one from the very bottom. However, as we can remember, Reactor implements Reactive-Streams specification, thus, it must support proper Backpressure control. One of the options how we may verify whether backpressure works or not, is to put the `log` operator lower right before the `subscribe` method call:
+
+[source,java]
+----
+Flux.fromStream(generateOrders())
+//    .log() commented here for now
+    .map(orderMapper::toOrderBase)
+    .publishOn(Schedulers.newSingle("orders-post-processing"))
+//  folded part of the code
+    .log() // placed logging of signals here
+    .subscribe(
+        new BaseSubscriber<Order>() {
+            public void hookOnSubscribe(Subscription s) {
+                s.request(1);
+            }
+        }
+    );
+----
+
+Once we execute the above mantioned code again, we observer the expected output:
+
+[source,console]
+----
+[ INFO] (main) onSubscribe(FluxFlatMap.FlatMapMain)
+[ INFO] (main) request(1)
+[ INFO] (orders-post-processing-1) onNext(MatchedOrder(id=0, matchedId=2, userId=test, price=10, matchedPrice=10, quantity=1, type=LIMIT, taker=true, partially=true, timestamp=1545565493502))
+----
+
+As we can see, at that point we received exactly one element, which has been requested by `BaseSubscriber`. Even though, backpressure works for our subscriber as expected, produced 1024 elements by the source could be totally unexpected and may corrupt the whole business logic built on top of expectations of the proper backpressure control. Therefore, we have to find out what operators in Reactor cause elements overfetching.
+
+== Detecting evil operator...s
+
+The simples way to investigate what causes overfetching is to place `log()` operator after each operator and verify which one requests more then expected:
+
+[source,java]
+----
+Flux.fromStream(generateOrders())
+//  folded part of the code
+    .groupBy(Order::getId)
+    .index()             <1>
+    .log()
+    .map(Tuple2::getT2)  <2>
+    .flatMap(ordersByIdFlux -> ordersByIdFlux
+//      folded part of the code
+    )
+    .subscribe(
+        new BaseSubscriber<Order>() {
+            public void hookOnSubscribe(Subscription s) {
+                s.request(1);
+            }
+        }
+    );
+----
+<1> Map element to `Tuple<Long, T>`, where first element of tuple is index of the propagated element. This feature is used for more fine-grained logging that allows identifying the number of elements easily.
+<2> Map `Tuple<Long, T>` back to T to preserve initial flow without chaining
+
+This time the execution of the code above produce the following output:
+
+[source,console]
+----
+[ INFO] (main) | onSubscribe([Fuseable] FluxIndexFuseable.IndexFuseableSubscriber)
+[ INFO] (main) | request(256)
+[ INFO] (orders-post-processing-1) | onNext([0,UnicastGroupedFlux])
+...
+[ INFO] (orders-post-processing-1) | onNext([255,UnicastGroupedFlux])
+----
+
+As we can see, right after `flatMap` operator, we got a first request for 256 elements which produced 256.
+
+=== Inside FlatMap
+
+At that point we have a clear understanding that `flatMap` operator affect the number of requested elements from the upstream. Therefore, we have to dig deeper and explore how `flatMap` works.
+ 
+Those curious of us who explored all overloads of `flatMap` might noticed the following two:
+
+[source,java]
+----
+<V> Flux<V> flatMap(Function<? super T, ? extends Publisher<? extends V>> mapper, int concurrency)
+<V> Flux<V> flatMap(Function<? super T, ? extends Publisher<? extends V>> mapper, int concurrency, int prefetch)
+----
+
+As we may see, along with familiar for us `mapper` function which converts element from upstream to asynchronous stream, we have parameters such as `concurrency` and `prefetch`.
+
+In order to understand those parameters, lets recap what `flatMap` essentially does:
+
+image::/images/FlatMapPart1HowItWorks.gif[How We Think FlatMap Works]
+
+As we can see from the animation above, in nutshell the `flatMap` operator map element to a substream and flatten element from that substream to the main stream.
+Even though that picture is clear enough, we have to think how the same straightforward operation might look like with enabled backpressure control. Suppose that a `Subscriber` requests four elements this time:
+
+image::/images/FlatMapPart2BackpressureRealSubscriber.gif[Subscriber Requests Four elements from FlatMap]
+
+Since reactive-stream in Reactor 3 and RxJava 2 is a chain of operators, the `requestN` signal usually goes through each of the. On the animation before we send a first `request(4)` signal to the `flatMap` operator. Because of *undeterministics* in Reactive Programming exposed as *unability to predict the number of elements produced by a reactive-stream*. It means that we can not know for sure how many elements substream, mapped by the `flatMap` operator, exactly produces. Therefore, the `flatMap` operators logic can't calculate the number of elements to request from upstream. Thus, one of the options can be to request one element from upstream:
+
+image::/images/FlatMapPart2BackpressureFlatMapUpstream.gif[FlatMap Requests One element from Upstream]
+
+As we may see from the animation above, once `flatMap` is requested, one of the possible solutions in order to have backpressure control enabled and keep proper requested number of elements through the whole pipeline is to request one element and then request more or fulfill demand of downstream depends on the number of items produced by substream. For example, lets consider the situation when produced substream can fulfill the demand of the `Subscriber`:
+
+image::/images/FlatMapPart2BackpressureFlatMapSubstream.gif[FlatMap Requests Four elements from Substream]
+
+The animation above shows how the downstream demand propagated to substream so the last one asynchronously produces four elements to the subscriber.
+However, the real demand of the subscriber could vary and could be higher then available elements in the substream. Therefore the process could be slightly different from what we saw in the above animation:
+
+image::/images/FlatMapPart2BackpressureControl.gif[FlatMap with lazy backpressure]
+
+As we can see from the image above, a one `request(4)` call transforms to four separate `request(1)` calls because of non-determinism of `Publisher<T>`.
+Even though four additional requests can not impact performance that mach, but in case higher requested number, one large request from downstream can transform whole interaction from the hybrid, relatively efficient push-pull model to pull-only, inefficient elements sending.
+
+[NOTE]
+====
+That in order to make Reactive-Streams compliant `Publisher`, it is necessary to employee the proper https://github.com/reactive-streams/reactive-streams-jvm#term_ext_sync[external synchronization] (see rule https://github.com/reactive-streams/reactive-streams-jvm#1.3[1.3]). Therefore, due to common implementation of the `Publisher`s, often data-requesting can impact performance a lot. In turn, data producing process can take some time so independent 1 element requesting can be inefficient from that perspective as well.
+====
+
+Hence, to preserve efficiency of upstream, we can propagate the same requested number of data from the downstream to upstream. However, in that setup we will have to enqueue elements inside `flatMap`: 
+
+image::/images/FlatMapPart2BackpressureWithPropagationRequestedNumber.gif[FlatMap backpressure with downstream request number propagation to upstream]
+
+The technique of backpressure control mentioned above is better since we propagate the exact number of elements from the downstream to upstream which can allows upstream prepare required number of elements efficiently and decrease the number of possible interaction with locks/barriers. 
+
+Even though the direct number of requested element propagation is much more efficient, request of too high number, can cause unpredictable memory usage and can affect resilience of the system 
+
+== Intro
+
+In both libraries, the prefetch is a value that operator request from the upstream, because the demand could not be exposed directly from the downstream. Thus, at the initial stage of the stream constructing we can set up how manys we can enqueue regardless downstream capacity, so once the `onSubscribe` is called we requested the number of elements. The code below shows what I'm talking about:
+
+=== Asdasda
+
+[source,java]
+----
+@Override
+public void onSubscribe(Subscription s) {
+    if (Operators.validate(this.s, s)) { <1>
+        this.s = s;
+
+        ...
+        
+        queue = queueSupplier.get();
+        
+        setupSubscribers();
+        
+        s.request(Operators.unboundedOrPrefetch(prefetch));
+    }
+}
+----
+
+The most interesting for us is the last line before braces which shows that at the very beginning we request some initial portion of elements.
+It means that if in case if we have `parallel(1, 1)` then the first element will be requested at the earliest stage.
+
+*Alright, what happens then?*
+Then, once an element is emitted from upstream, we enqueue that element :
+
+```java
+@Override
+public void onNext(T t) {
+    ...
+    
+        if (!queue.offer(t)) {
+            ...
+        }
+    }
+    drain();
+}
+```
+
+and we start *draining* elements, or in other words, start trying to send this element downstream. If there is a demand from downstream, that element will be sent and we request for a new element right after that. The code below shows the mentioned mechanism : 
+
+```java
+void drainAsync() {
+                ...
+                    v = q.poll();
+                ...
+                
+                if (v == null) {
+                    break;
+                }
+                
+                a[idx].onNext(v);
+                
+                ...
+                
+                int c = ++consumed;
+                if (c == limit) { // limit == prefetch
+                    consumed = 0;
+                    s.request(c);
+                }
+                ...
+}
+```
+
+As we can see, at the very end once we have sent an element, we request a new element ahead, so this element will be enqueued again until the new demand from downstream.
+
+***Conclusion***: in case if downstream request 1 element, with prefetch **1** we will always have 2 elements consumed from the source, 1 element will be delivered to the downstream, and 1 element will be enqueued in the operator which has prefetch.
+
+## What is going on in the initial code sample.
+
+First of all, in order to analyse the behavior of the given code, lets check where we have prefetch behavior.
+
+The following is the list of operators with prefetch: 
+
+ * `publishOn`
+ * `flatMap`
+ * `concatMap`
+ * `parallel`
+ * `runOn`
+ * `groupBy`

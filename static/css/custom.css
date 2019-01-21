@@ -1,0 +1,43 @@
+.content .listingblock:not(:last-child),
+.content .paragraph:not(:last-child) {
+    margin-bottom: 1.5em;
+}
+
+.highlight {
+    font-size: 100%;
+}
+
+.content .sect1,
+.content .sect2,
+.content .sect3,
+.content .sect4,
+.content .sect5 {
+    margin-bottom: 20px;
+}
+
+.content .sect1:not(:first-child),
+.content .sect2:not(:first-child),
+.content .sect3:not(:first-child),
+.content .sect4:not(:first-child),
+.content .sect5:not(:first-child),
+.content .sect6:not(:first-child) {
+  margin-top: 80px;
+}
+
+.content .sect1::before,
+.content .sect2::before,
+.content .sect3::before,
+.content .sect4::before,
+.content .sect5::before,
+.content .sect6::before {
+  color: #aeb1b5;
+  font-weight: 700;
+}
+
+.content .sect1 + .sect2:not(:first-child),
+.content .sect2 + .sect3:not(:first-child),
+.content .sect3 + .sect4:not(:first-child),
+.content .sect4 + .sect5:not(:first-child),
+.content .sect5 + .sect6:not(:first-child) {
+  margin-top: 20px;
+}
