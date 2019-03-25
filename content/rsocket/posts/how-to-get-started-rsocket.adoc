@@ -1,0 +1,215 @@
+---
+title: "How to get started with RSocket"
+date: 2019-03-24T23:05:08+03:00
+draft: false
+---
+
+= Get Started with RSocket-Java
+:toc:
+
+== Acknowledgment
+
+This is a first blog post in the series of How to get started with RSocket related blog posts in which I'm going to share the simplest tips on running, configuring, and debugging RSocket. 
+
+This series of blog posts do not include the motivation of the RSocket itself which will be delivered in a separate series.
+
+== Declaring Core Dependency
+The first steps in the setup of any project is declaring the required dependencies. In our project we use Gradle, but the same can be reproduced with Maven:
+
+[source, groovy]
+----
+dependencies {
+  implementation 'io.rsocket:rsocket-core:0.12.1-RC3-SNAPSHOT'
+}
+----
+
+[NOTE]
+====
+At a moment of this blog writing, the latest version of RSocket-Java was `0.12.1-RC3-SNAPSHOT`.
+====
+
+== Constructing RSocket Receiver
+
+In RSocket-Java, any construction of connector/receiver starts with static factory called `io.rsocket.RSocketFactory`. `RSocketFactory` has two central builder methods one of which is for receiver declaration:
+
+[source,java]
+----
+package com.example.rsocket;
+
+import io.rsocket.RSocketFactory;
+
+
+public class RSocketPlayground {
+  public static void main(String[] args) {
+    RSocketFactory.ServerRSocketFactory serverRSocketFactory = 
+      RSocketFactory.receive();
+  }
+}
+----
+
+The above example show the first step of building an RSocket receiver. Call to `RSocketFactory.receive()` returns a `RSocketFactory.ServerRSocketFactory` instance which gives a wide list of customization for RSocket receiver. For now we just use only `io.rsocket.RSocketFactory.ServerRSocketFactory#acceptor` which allows us to specify handler for incoming connections:
+
+[source,java]
+----
+package com.example.rsocket;
+
+import io.rsocket.AbstractRSocket;
+import io.rsocket.ConnectionSetupPayload;
+import io.rsocket.RSocket;
+import io.rsocket.RSocketFactory;
+import io.rsocket.SocketAcceptor;
+import reactor.core.publisher.Mono;
+
+
+public class RSocketPlayground {
+  public static void main(String[] args) {
+    RSocketFactory.ServerRSocketFactory serverRSocketFactory = 
+      RSocketFactory.receive();
+
+    RSocketFactory.ServerTransportAcceptor serverTransportAcceptor =
+      serverRSocketFactory.acceptor(new SocketAcceptor() {             <1>
+        @Override
+        public Mono<RSocket> accept(                                   <2>
+            ConnectionSetupPayload payload,                            <3>
+            RSocket connectorRSocket                                   <4>
+        ) {
+          return Mono.just(new AbstractRSocket() {});                  <5>
+        }
+      });
+  }
+}
+----
+<1> Creates an instance of the `io.rsocket.SocketAcceptor` class and passes it to the `acceptor` method;
+<2> Declares the `accept` handler method which accept two params and asynchronously return server `RSocket`;
+<3> Represents the information that connector can send to receiver at the connection stage;
+<4> Instantiates `RSocket` that represents/gives access to the connector functionality;
+<5> Constructs instance of RSocket that represents/gives access to receiver functionality;
+
+The above sample continues the RSocket receiver construction and shows how we can declare a no-ops socket acceptor. In turn, applying that stage returns a `io.rsocket.RSocketFactory.ServerTransportAcceptor` which allows us to finalize setup by declaring a transport.
+
+== Declaring Transport Dependency
+
+Since RSocket is an Application Layer protocol, it may work on top of any lower level transport. In general core dependency provides just an interface for transport. Thus we have to add another link to required implementation. Today we are going to use local, inter process transport for simplicity:
+
+[source, groovy]
+----
+dependencies {
+  implementation 'io.rsocket:rsocket-transport-local:0.12.1-RC3-SNAPSHOT'
+}
+----
+
+== Constructing RSocket Receiver Transport
+
+Finally, we can use `io.rsocket.transport.local.LocalServerTransport` in order to run RSocket receiver on it:
+
+[source,java]
+----
+package com.example.rsocket;
+
+import io.rsocket.AbstractRSocket;
+import io.rsocket.ConnectionSetupPayload;
+import io.rsocket.RSocket;
+import io.rsocket.RSocketFactory;
+import io.rsocket.SocketAcceptor;
+import reactor.core.publisher.Mono;
+
+
+public class RSocketPlayground {
+  public static void main(String[] args) {
+    RSocketFactory.ServerRSocketFactory serverRSocketFactory = 
+      RSocketFactory.receive();
+
+    RSocketFactory.ServerTransportAcceptor serverTransportAcceptor =
+      serverRSocketFactory.acceptor(new SocketAcceptor() {             
+        @Override
+        public Mono<RSocket> accept(                                   
+            ConnectionSetupPayload payload,                            
+            RSocket connectorRSocket                                   
+        ) {
+          return Mono.just(new AbstractRSocket() {});                  
+        }
+      });
+
+    Closeable closeableServer = serverTransportAcceptor
+      .transport(LocalServerTransport.create("RSocket-Receiver"))    <1>
+      .start()                                                       <2>
+      .block();                                                      <3>
+  }
+}
+----
+<1> Creates an instance of `LocalServerTransport` and passes it to builder.
+<2> Starts RSocket Receiver on the specified transport
+<3> Blocks executing thread by the end of startup process
+
+The above code show finalized creation of the RSocket Receiver that is running on the local or simply inter-process transport implementation.
+
+== Constructing RSocket Connector
+
+Following above-mentioned samples we can easily create an instance of RSocket connector. The only difference is that we have to use the `io.rsocket.RSocketFactory#connect` factory method instead:
+
+[source,java]
+----
+RSocket rSocket = RSocketFactory
+  .connect()
+  .transport(LocalClientTransport.create("RSocket-Receiver"))
+  .start()
+  .block();
+----
+
+== Complete Sample
+
+Finally, if we add some logging to the Receiver acceptor as in the following complete sample:
+
+[source,java]
+----
+package com.example.rsocket;
+
+import io.rsocket.AbstractRSocket;
+import io.rsocket.ConnectionSetupPayload;
+import io.rsocket.RSocket;
+import io.rsocket.RSocketFactory;
+import io.rsocket.SocketAcceptor;
+import reactor.core.publisher.Mono;
+
+
+public class RSocketPlayground {
+  public static void main(String[] args) {
+    RSocketFactory.ServerRSocketFactory serverRSocketFactory = 
+      RSocketFactory.receive();
+
+    RSocketFactory.ServerTransportAcceptor serverTransportAcceptor =
+      serverRSocketFactory.acceptor(new SocketAcceptor() {             
+        @Override
+        public Mono<RSocket> accept(                                   
+            ConnectionSetupPayload payload,                            
+            RSocket connectorRSocket                                   
+        ) {
+          System.out.println(
+            "Received Connection. Data: [" + payload.getDataUtf8() + "]. " +
+            "Metadata: [" + payload.getMetadataUtf8() + "]"
+          );
+
+          return Mono.just(new AbstractRSocket() {});                  
+        }
+      });
+
+    Closeable closeableServer = serverTransportAcceptor
+      .transport(LocalServerTransport.create("RSocket-Receiver"))
+      .start()                                                      
+      .block();                                                      
+  }
+}
+----
+
+
+== Summary
+
+In this blog post we covered the simplest steps required to run RSocket receiver and connector. 
+
+To recap: 
+1. All you need is in `io.rsocket.RSocketFactory`.
+2. RSocket is Application layer protocol so it can be built in to of any lower transport.
+3. The `rocket-core` module does not provide particular implementation of the transport, thus it is required to use additional module.
+4. The simplest way to get started is using inter-process transport implementation which does not required running real server.
+
+In the next blog post we will focus on how to start sending data between peers using RSocket-Java.
