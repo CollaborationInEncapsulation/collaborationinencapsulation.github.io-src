@@ -2,7 +2,7 @@ baseURL = "http://example.org/"
 languageCode = "en-us"
 title = "Collaboration In Encapsulation"
 theme = "kiss"
-copyright = "&copy; <a href=\"https://github.com/OlegDokuka\">Oleh Dokuka</a> 2018"
+copyright = "&copy; <a href=\"https://github.com/OlegDokuka\">Oleh Dokuka</a> 2019"
 disqusShortname = "coinen"
 googleAnalytics = ""
 Paginate = 5 # Number of posts per page

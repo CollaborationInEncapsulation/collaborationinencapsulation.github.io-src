@@ -1,7 +1,7 @@
 ---
 title: "Prefetch Magic"
 date: 2018-10-22T23:05:08+03:00
-draft: false
+draft: true
 ---
 
 = Prefetch Magic (or where is my Backpressure?)
@@ -267,7 +267,7 @@ image::/images/FlatMapPart2BackpressureWithPropagationRequestedNumber.gif[FlatMa
 
 The technique of backpressure control mentioned above is better since we propagate the exact number of elements from the downstream to upstream which can allows upstream prepare required number of elements efficiently and decrease the number of possible interaction with locks/barriers. 
 
-Even though the direct number of requested element propagation is much more efficient, request of too high number, can cause unpredictable memory usage and can affect resilience of the system 
+Even though the direct number of requested element propagation is much more efficient, request of too high number, can cause unpredictable memory usage and can affect resilience of the system. Therefore we have to 
 
 == Intro
 
