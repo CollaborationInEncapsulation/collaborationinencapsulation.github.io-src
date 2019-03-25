@@ -14,6 +14,7 @@ This is a first blog post in the series of How to get started with RSocket relat
 This series of blog posts do not include the motivation of the RSocket itself which will be delivered in a separate series.
 
 == Declaring Core Dependency
+
 The first steps in the setup of any project are declaring the required dependencies. In our project we use Gradle, but the same can be reproduced with Maven:
 
 [source, groovy]
@@ -201,6 +202,13 @@ public class RSocketPlayground {
 }
 ----
 
+By running the final code, we observe the following printed message in a console: 
+
+----
+Received Connection. Data: []. Metadata: []
+----
+
+It means that our connector has successfully reached the receiver.
 
 == Summary
 
