@@ -4,7 +4,7 @@ date: 2019-03-24T23:05:08+03:00
 draft: false
 ---
 
-= Get Started with RSocket-Java
+= How-To: Create RSocket-Java Receiver/Connector
 :toc:
 
 == Acknowledgment
@@ -207,9 +207,12 @@ public class RSocketPlayground {
 In this blog post we covered the simplest steps required to run RSocket receiver and connector. 
 
 To recap: 
-1. All you need is in `io.rsocket.RSocketFactory`.
-2. RSocket is Application layer protocol so it can be built in to of any lower transport.
-3. The `rocket-core` module does not provide particular implementation of the transport, thus it is required to use additional module.
-4. The simplest way to get started is using inter-process transport implementation which does not required running real server.
+
+  1. All you need is in `io.rsocket.RSocketFactory`.
+  2. RSocket is Application layer protocol so it can be built in to of any lower transport.
+  3. The `rocket-core` module does not provide particular implementation of the transport, thus it is required to use additional module.
+  4. The simplest way to get started is using inter-process transport implementation which does not required running real server.
+
+== What is next?
 
 In the next blog post we will focus on how to start sending data between peers using RSocket-Java.

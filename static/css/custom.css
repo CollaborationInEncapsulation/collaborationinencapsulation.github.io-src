@@ -1,3 +1,18 @@
+.content .note,
+.content .note * {
+    
+    border: 0 none;
+    background-color: #f5f7fa;
+}
+
+.content .note .icon {
+    width: 100px;
+    line-height: 30px;
+    text-align: center;
+    height: 46px;
+}
+
+.content .colist,
 .content .listingblock:not(:last-child),
 .content .paragraph:not(:last-child) {
     margin-bottom: 1.5em;
