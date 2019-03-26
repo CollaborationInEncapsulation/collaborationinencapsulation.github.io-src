@@ -177,7 +177,7 @@ Received Fire-And-Forget. Data: [Hello FireAndForget]. Metadata: []
 FireAndForget Done At: [2019-03-26T16:59:51.070513Z]
 ----
 
-As we can see from the logs above, the difference in time be is tremendously less than 1 Day. In that way, we ensured the mentioned fire-and-forget behavior.
+As we can see from the logs above, the difference in time between the call execution and the response is tremendously less than 1 Day. In that way, we ensured the mentioned fire-and-forget behavior.
 
 == Implementing Request Stream and Request Channel
 
