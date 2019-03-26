@@ -138,9 +138,9 @@ public class RSocketPlayground {
   }
 }
 ----
-<1> Creates an instance of `LocalServerTransport` and passes it to builder.
-<2> Starts RSocket Receiver on the specified transport
-<3> Blocks executing thread by the end of startup process
+<1> Creates an instance of `LocalServerTransport` and passes it to builder;
+<2> Starts RSocket Receiver on the specified transport;
+<3> Blocks executing thread by the end of startup process;
 
 The above code show finalized creation of the RSocket Receiver that is running on the local or simply inter-process transport implementation.
 
@@ -197,13 +197,20 @@ public class RSocketPlayground {
     Closeable closeableServer = serverTransportAcceptor
       .transport(LocalServerTransport.create("RSocket-Receiver"))
       .start()                                                      
-      .block();                                                      
+      .block();       
+      
+    RSocket rSocket = RSocketFactory
+      .connect()
+      .transport(LocalClientTransport.create("RSocket-Receiver"))
+      .start()
+      .block();                                               
   }
 }
 ----
 
 By running the final code, we observe the following printed message in a console: 
 
+[source]
 ----
 Received Connection. Data: []. Metadata: []
 ----
@@ -223,4 +230,4 @@ To recap:
 
 == What is next?
 
-In the next blog post, we will focus on how to start sending data between peers using RSocket-Java.
+In the link:../how-to-rsocket-java-basic-interaction[next] blog post, we will focus on how to start sending data between peers using RSocket-Java.
