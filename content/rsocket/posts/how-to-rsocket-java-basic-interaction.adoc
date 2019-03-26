@@ -31,8 +31,8 @@ There are 5 central interaction models in RSocket:
 
  - `requestResponse` - the most common interaction type we ever used in our development.
  - `fireAndForget` - an advanced `requestResponse` which does not wait for the response at all.
- - `requestStream` - the request with a response as a stream of `Payload`s.
- - `requestChannel` - duplex streaming where the sender can send a stream of `Payload`s, as well as the responder, can respond with a stream of `Payload`s.
+ - `requestStream` - the request with a response as a stream of `Payload`.
+ - `requestChannel` - duplex streaming where the sender can send a stream of `Payload`, as well as the responder, can respond with a stream of `Payload`.
  - `metadataPush` - the special interaction type which allows pushing meta information to a responder. The main difference with `fireAndForget` is that `metadataPush` awaits successful processing of the pushed data and completes when responder sends a complete signal.
 
 The fantastic part of RSocket is that all those methods are incorporated within the `io.rsocket.RSocket` class. Moreover `RSocket` plays both roles - a sender role which means we can use `RSocket` in order to make a call, and the responder role which means we should return an implementation of this class in order to handle incoming calls. 
@@ -114,7 +114,7 @@ Payload response = rSocket
 <4> Passes `Payload` metadata as `String`;
 <5> Blocks execution until the successful/exceptional response from the server;
 
-As we can see from the sample above, we can easily use `RSocket` API in order to execute plain request response interaction. In turn, RSocket core module provides us with straightforward API in order to construct a `Payload` instance from either `byte`s or `String`.
+As we can see from the sample above, we can easily use `RSocket` API in order to execute plain request response interaction. In turn, RSocket core module provides us with straightforward API in order to construct a `Payload` instance from either `byte` buffer or `String`.
 
 By running the code above we observe the following output in the console: 
 
@@ -211,7 +211,7 @@ public Flux<Payload> requestChannel(Publisher<Payload> payloads) {      <3>
 ----
 <1> Declares the `requestStream` method which accept only as single `Payload`;
 <2> Responds with `FluxRange` and `.map` each element to `Payload`;
-<3> Declares the `requestChannel` method which accepts in that case a `Publisher` of `Payload`s;
+<3> Declares the `requestChannel` method which accepts in that case a `Publisher` of `Payload`;
 <4> Adopts `Publisher` to Reactor's `Flux`;
 <5> Maps each incoming `Payload` from the sender to some echo response `Payload`;
 
