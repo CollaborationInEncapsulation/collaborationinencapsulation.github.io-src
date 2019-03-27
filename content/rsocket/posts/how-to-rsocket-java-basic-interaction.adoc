@@ -258,7 +258,7 @@ To recap:
   4. Request-Response allows you to do most wider interaction between client and server.
   5. There is an advanced Request-Response called Fire and Forget which allows sending a message without waiting for the response back.
   6. There are two interactions which allow handling data streaming.
-  7. There is an additional `requestPush` method that allows sending service/meta information to a recipient
+  7. There is an additional `metadataPush` method that allows sending service/meta information to a recipient
 
 == What is next?
 
